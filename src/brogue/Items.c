@@ -4243,7 +4243,7 @@ void beckonMonster(creature *monst, short x, short y) {
     pos from = monst->loc;
     pos to = (pos){ .x = x, .y = y };
     theBolt.magnitude = max(1, (distanceBetween(x, y, monst->loc.x, monst->loc.y) - 2) / 2);
-    zap(from, to, &theBolt, false);
+    zap(from, to, &theBolt, false, true);
     if (monst->ticksUntilTurn < player.attackSpeed+1) {
         monst->ticksUntilTurn = player.attackSpeed+1;
     }
@@ -4715,7 +4715,7 @@ void detonateBolt(bolt *theBolt, creature *caster, short x, short y, boolean *au
 }
 
 // returns whether the bolt effect should autoID any staff or wand it came from, if it came from a staff or wand
-boolean zap(pos originLoc, pos targetLoc, bolt *theBolt, boolean hideDetails) {
+boolean zap(pos originLoc, pos targetLoc, bolt *theBolt, boolean hideDetails, boolean reverseBoltDir) {
     pos listOfCoordinates[MAX_BOLT_LENGTH];
     short i, j, k, x, y, x2, y2, numCells, blinkDistance = 0, boltLength, initialBoltLength, lights[DCOLS][DROWS][3];
     creature *monst = NULL, *shootingMonst;
@@ -4743,7 +4743,27 @@ boolean zap(pos originLoc, pos targetLoc, bolt *theBolt, boolean hideDetails) {
     y = originLoc.y;
 
     initialBoltLength = boltLength = 5 * theBolt->magnitude;
-    numCells = getLineCoordinates(listOfCoordinates, originLoc, targetLoc, (hideDetails ? &boltCatalog[BOLT_NONE] : theBolt));
+    if (reverseBoltDir) {
+        // Compute the bolt as if it went the other way, and then reverse the list of coordinates.
+        // This is to ensure that when a mirrored totem beckons the player, the player doesn't get
+        // stuck in their current location if blocked by a monster (issue #497).
+        pos listOfCoordinatesTmp[MAX_BOLT_LENGTH];
+        short numCellsTmp = getLineCoordinates(listOfCoordinatesTmp, targetLoc, originLoc, (hideDetails ? &boltCatalog[BOLT_NONE] : theBolt));
+        numCells = -1;
+        for (int i = 0; i < numCellsTmp; i++) {
+            if (listOfCoordinatesTmp[i].x == originLoc.x && listOfCoordinatesTmp[i].y == originLoc.y) {
+                numCells = i;
+                break;
+            }
+        }
+        brogueAssert(numCells > -1);
+        for (int i = 0; i < numCells; i++) {
+            listOfCoordinates[i] = listOfCoordinatesTmp[numCells-1-i];
+        }
+        listOfCoordinates[numCells] = (pos){ .x = -1, .y = -1 };
+    } else {
+        numCells = getLineCoordinates(listOfCoordinates, originLoc, targetLoc, (hideDetails ? &boltCatalog[BOLT_NONE] : theBolt));
+    }
     shootingMonst = monsterAtLoc(originLoc.x, originLoc.y);
 
     if (hideDetails) {
@@ -6414,7 +6434,8 @@ boolean useStaffOrWand(item *theItem, boolean *commandsRecorded) {
         if (theItem->charges > 0) {
             autoID = zap(originLoc, zapTarget,
                          &theBolt,
-                         !boltKnown);   // hide bolt details
+                         !boltKnown,   // hide bolt details
+                         false);
             if (autoID) {
                 if (!tableForItemCategory(theItem->category)[theItem->kind].identified) {
                     itemName(theItem, buf2, false, false, NULL);

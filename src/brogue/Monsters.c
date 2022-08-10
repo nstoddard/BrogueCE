@@ -2338,7 +2338,7 @@ boolean monsterBlinkToPreferenceMap(creature *monst, short **preferenceMap, bool
         }
         monst->ticksUntilTurn = monst->attackSpeed * (monst->info.flags & MONST_CAST_SPELLS_SLOWLY ? 2 : 1);
         theBolt = boltCatalog[theBoltType];
-        zap(origin, bestTarget, &theBolt, false);
+        zap(origin, bestTarget, &theBolt, false, false);
         return true;
     }
     return false;
@@ -2676,7 +2676,7 @@ void monsterCastSpell(creature *caster, creature *target, enum boltType boltInde
     theBolt = boltCatalog[boltIndex];
     pos originLoc = caster->loc;
     pos targetLoc = target->loc;
-    zap(originLoc, targetLoc, &theBolt, false);
+    zap(originLoc, targetLoc, &theBolt, false, false);
 
     if (player.currentHP <= 0) {
         gameOver(monsterCatalog[caster->info.monsterID].monsterName, false);
