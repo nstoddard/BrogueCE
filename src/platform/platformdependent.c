@@ -272,7 +272,7 @@ void initScores() {
     short i;
     FILE *scoresFile;
 
-    scoresFile = fopen("BrogueHighScores.txt", "w");
+    scoresFile = fopen(mode.highScoresFilename, "w");
     for (i=0; i<HIGH_SCORES_COUNT; i++) {
         fprintf(scoresFile, "%li\t%li\t%s", (long) 0, (long) 0, "(empty entry)\n");
     }
@@ -325,11 +325,11 @@ short loadScoreBuffer() {
     time_t rawtime;
     struct tm * timeinfo;
 
-    scoresFile = fopen("BrogueHighScores.txt", "r");
+    scoresFile = fopen(mode.highScoresFilename, "r");
 
     if (scoresFile == NULL) {
         initScores();
-        scoresFile = fopen("BrogueHighScores.txt", "r");
+        scoresFile = fopen(mode.highScoresFilename, "r");
     }
 
     for (i=0; i<HIGH_SCORES_COUNT; i++) {
@@ -393,7 +393,7 @@ void saveScoreBuffer() {
     short i;
     FILE *scoresFile;
 
-    scoresFile = fopen("BrogueHighScores.txt", "w");
+    scoresFile = fopen(mode.highScoresFilename, "w");
 
     for (i=0; i<HIGH_SCORES_COUNT; i++) {
         // save the entry

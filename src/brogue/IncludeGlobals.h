@@ -43,6 +43,8 @@ extern item *packItems;
 extern item *monsterItemsHopper;
 extern short numberOfWaypoints;
 
+extern gameMode mode; // TODO: rename this to something less generic
+
 extern char displayedMessage[MESSAGE_LINES][COLS*2];
 extern short messagesUnconfirmed;
 extern char combatText[COLS*2];

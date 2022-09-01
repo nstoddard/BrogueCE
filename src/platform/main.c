@@ -44,6 +44,8 @@ static void printCommandlineHelp() {
     "                           prints a catalog of the first LEVELS levels of NUM\n"
     "                           seeds from seed START (defaults: 1 1000 5)\n"
     "--data-dir DIRECTORY       specify directory containing game resources (experimental)\n"
+    "--depth N                  set the depth of the dungeon to N (6 to 40)\n"
+    "                           (the amulet will be about 2/3 of the way through)\n"
     );
     return;
 }
@@ -95,6 +97,12 @@ int main(int argc, char *argv[])
     rogue.wizard = false;
     rogue.displayStealthRangeMode = false;
     rogue.trueColorMode = false;
+    
+    mode.deepestLevel = 40;
+    mode.amuletLevel = 26;
+    mode.enchantValue = 1;
+    mode.startWithDetectMagic = false;
+    mode.includeEmptyLevel = true;
 
     enum graphicsModes initialGraphics = TEXT_GRAPHICS;
 
@@ -262,6 +270,31 @@ int main(int argc, char *argv[])
             if (i + 1 < argc) {
                 strcpy(dataDirectory, argv[++i]);
                 continue;
+            }
+        }
+
+        if (strcmp(argv[i], "--depth") == 0) {
+            if (i + 1 < argc) {
+                int depth = atoi(argv[++i]);
+                if (depth >= 6 && depth <= 40) {
+                    mode.deepestLevel = depth;
+                    mode.amuletLevel = ADJUST_DEPTH(26);
+                    if (depth <= 15) {
+                        mode.enchantValue = 2;
+                        mode.startWithDetectMagic = true;
+                    }
+                    if (depth <= 20) {
+                        mode.includeEmptyLevel = false;
+                    }
+                    if (depth == 40) {
+                        strncpy(mode.highScoresFilename, "BrogueHighScores.txt", 50);
+                    } else {
+                        snprintf(mode.highScoresFilename, 50, "BrogueHighScores-depth%d.txt", depth);
+                    }
+                    fprintf(stderr, "Amulet on depth %d\n", mode.amuletLevel);
+                    fprintf(stderr, "Enchant scroll value: %d\n", mode.enchantValue);
+                    continue;
+                }
             }
         }
 

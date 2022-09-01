@@ -315,7 +315,7 @@ item *makeItemInto(item *theItem, unsigned long itemCategory, short itemKind) {
         case GOLD:
             theEntry = NULL;
             theItem->displayChar = G_GOLD;
-            theItem->quantity = rand_range(50 + rogue.depthLevel * 10, 100 + rogue.depthLevel * 15);
+            theItem->quantity = rand_range(50 + ADJUST_DEPTH_INV(rogue.depthLevel) * 10, 100 + ADJUST_DEPTH_INV(rogue.depthLevel) * 15);
             break;
         case AMULET:
             theEntry = NULL;
@@ -483,6 +483,21 @@ boolean getItemSpawnLoc(unsigned short heatMap[DCOLS][DROWS], short *x, short *y
     return false;
 }
 
+// This function is needed to increase the frequency of life/strength/enchanting when
+// `mode.deepestLevel` is small.
+// TODO: document how this works; look for simpler ways to do this
+static int compute_item_frequency(int a0, int b, int divisor) {
+    // Adjust for the fraction of items in this category vs other categories (approximate, but
+    // probably good enough)
+    // The 175 comes from the total for the probabilities in `pickItemCategory`
+    b = b * 175 / 50;
+    int a0_frac = FP_FACTOR * a0 / (a0 + b) + 1; // The +1 is needed to avoid rounding issues
+    int a1_frac = min(ADJUST_DEPTH_INV(a0_frac), max(a0_frac, FP_FACTOR*9/10)) / divisor;
+    int res = a1_frac * b / (FP_FACTOR - a1_frac);
+    // fprintf(stderr, "%d(%d->%d), %d -> %d\n", a0, a0_frac, a1_frac, b, res);
+    return res;
+}
+
 // Generates and places items for the level. Must pass the location of the up-stairway on the level.
 void populateItems(short upstairsX, short upstairsY) {
     if (!ITEMS_ENABLED) {
@@ -523,9 +538,15 @@ void populateItems(short upstairsX, short upstairsY) {
         }
         numberOfGoldPiles = 0;
     } else {
-        rogue.lifePotionFrequency += 34;
-        rogue.strengthPotionFrequency += 17;
-        rogue.enchantScrollFrequency += 30;
+        if (rogue.depthLevel == 1) {
+            fprintf(stderr, "Setting life/strength/enchanting frequency to %d%% of default\n", ADJUST_DEPTH_INV(100));
+        }
+        // `ADJUST_DEPTH_INV` effectively causes the frequency to be added multiple times.
+        // E.g. if mode.deepestLevel=10, this will quadruple the frequencies.
+        rogue.lifePotionFrequency += ADJUST_DEPTH_INV(34);
+        rogue.strengthPotionFrequency += ADJUST_DEPTH_INV(17);
+        rogue.enchantScrollFrequency += ADJUST_DEPTH_INV(30);
+
         numberOfItems = 3;
         while (rand_percent(60)) {
             numberOfItems++;
@@ -536,7 +557,7 @@ void populateItems(short upstairsX, short upstairsY) {
             numberOfItems++; // and 2 more here
         }
 
-        numberOfGoldPiles = min(5, rogue.depthLevel / 4);
+        numberOfGoldPiles = min(5, ADJUST_DEPTH_INV(rogue.depthLevel) / 4);
         for (goldBonusProbability = 60;
              rand_percent(goldBonusProbability) && numberOfGoldPiles <= 10;
              goldBonusProbability -= 15) {
@@ -545,7 +566,7 @@ void populateItems(short upstairsX, short upstairsY) {
         }
         // Adjust the amount of gold if we're past depth 5 and we were below or above
         // the production schedule as of the previous depth.
-        if (rogue.depthLevel > 5) {
+        if (ADJUST_DEPTH_INV(rogue.depthLevel) > 5) {
             if (rogue.goldGenerated < aggregateGoldLowerBound(rogue.depthLevel - 1)) {
                 numberOfGoldPiles += 2;
             } else if (rogue.goldGenerated > aggregateGoldUpperBound(rogue.depthLevel - 1)) {
@@ -619,13 +640,14 @@ void populateItems(short upstairsX, short upstairsY) {
         theCategory = ALL_ITEMS & ~GOLD; // gold is placed separately, below, so it's not a punishment
         theKind = -1;
 
-        scrollTable[SCROLL_ENCHANTING].frequency = rogue.enchantScrollFrequency;
-        potionTable[POTION_STRENGTH].frequency = rogue.strengthPotionFrequency;
-        potionTable[POTION_LIFE].frequency = rogue.lifePotionFrequency;
+        // The numbers 158 and 189 were computed by counting the total frequency of the relevant items in `Globals.c`
+        scrollTable[SCROLL_ENCHANTING].frequency = compute_item_frequency(rogue.enchantScrollFrequency, 158, mode.enchantValue);
+        potionTable[POTION_STRENGTH].frequency = compute_item_frequency(rogue.strengthPotionFrequency, 189, 1);
+        potionTable[POTION_LIFE].frequency = compute_item_frequency(rogue.lifePotionFrequency, 189, 1);
 
         // Adjust the desired item category if necessary.
-        if ((rogue.foodSpawned + foodTable[RATION].strengthRequired / 3) * 4 * FP_FACTOR
-            <= (POW_FOOD[rogue.depthLevel-1] + (randomDepthOffset * FP_FACTOR)) * foodTable[RATION].strengthRequired * 45/100) {
+        if ((rogue.foodSpawned + foodTable[RATION].strengthRequired / 3) * ADJUST_DEPTH_INV(4 * FP_FACTOR)
+            <= (POW_FOOD[ADJUST_DEPTH_INV(rogue.depthLevel)-1] + (randomDepthOffset * FP_FACTOR)) * foodTable[RATION].strengthRequired * 45/100) {
             // Guarantee a certain nutrition minimum of the approximate equivalent of one ration every four levels,
             // with more food on deeper levels since they generally take more turns to complete.
             theCategory = FOOD;
@@ -634,7 +656,7 @@ void populateItems(short upstairsX, short upstairsY) {
             }
         } else if (rogue.depthLevel > AMULET_LEVEL) {
             theCategory = GEM;
-        } else if (rogue.lifePotionsSpawned * 4 + 3 < rogue.depthLevel + randomDepthOffset) {
+        } else if (ADJUST_DEPTH(rogue.lifePotionsSpawned * 4 + 3) < rogue.depthLevel + randomDepthOffset) {
             theCategory = POTION;
             theKind = POTION_LIFE;
         }
@@ -1720,17 +1742,19 @@ boolean isVowelish(char *theChar) {
 }
 
 fixpt enchantIncrement(item *theItem) {
+    fixpt res = 0;
     if (theItem->category & (WEAPON | ARMOR)) {
         if (theItem->strengthRequired == 0) {
-            return FP_FACTOR;
+            res = FP_FACTOR;
         } else if (rogue.strength - player.weaknessAmount < theItem->strengthRequired) {
-            return FP_FACTOR * 35 / 10;
+            res = FP_FACTOR * 35 / 10;
         } else {
-            return FP_FACTOR * 125 / 100;
+            res = FP_FACTOR * 125 / 100;
         }
     } else {
-        return FP_FACTOR;
+        res = FP_FACTOR;
     }
+    return res * mode.enchantValue;
 }
 
 boolean itemIsCarried(item *theItem) {
@@ -2372,16 +2396,16 @@ void itemDetails(char *buf, item *theItem) {
                 switch (theItem->kind) {
                     case STAFF_LIGHTNING:
                         sprintf(buf2, "This staff deals damage to every creature in its line of fire; nothing is immune. (If the staff is enchanted, its average damage will increase by %i%%.)",
-                                (int) (100 * (staffDamageLow(enchant + FP_FACTOR) + staffDamageHigh(enchant + FP_FACTOR)) / (staffDamageLow(enchant) + staffDamageHigh(enchant)) - 100));
+                                (int) (100 * (staffDamageLow(enchant + FP_FACTOR*mode.enchantValue) + staffDamageHigh(enchant + FP_FACTOR*mode.enchantValue)) / (staffDamageLow(enchant) + staffDamageHigh(enchant)) - 100));
                         break;
                     case STAFF_FIRE:
                         sprintf(buf2, "This staff deals damage to any creature that it hits, unless the creature is immune to fire. (If the staff is enchanted, its average damage will increase by %i%%.) It also sets creatures and flammable terrain on fire.",
-                                (int) (100 * (staffDamageLow(enchant + FP_FACTOR) + staffDamageHigh(enchant + FP_FACTOR)) / (staffDamageLow(enchant) + staffDamageHigh(enchant)) - 100));
+                                (int) (100 * (staffDamageLow(enchant + FP_FACTOR*mode.enchantValue) + staffDamageHigh(enchant + FP_FACTOR*mode.enchantValue)) / (staffDamageLow(enchant) + staffDamageHigh(enchant)) - 100));
                         break;
                     case STAFF_POISON:
                         sprintf(buf2, "The bolt from this staff will poison any creature that it hits for %i turns. (If the staff is enchanted, this will increase to %i turns.)",
                                 staffPoison(enchant),
-                                staffPoison(enchant + FP_FACTOR));
+                                staffPoison(enchant + FP_FACTOR*mode.enchantValue));
                         break;
                     case STAFF_TUNNELING:
                         sprintf(buf2, "The bolt from this staff will dissolve %i layers of obstruction. (If the staff is enchanted, this will increase to %i layers.)",
@@ -2391,18 +2415,18 @@ void itemDetails(char *buf, item *theItem) {
                     case STAFF_BLINKING:
                         sprintf(buf2, "This staff enables you to teleport up to %i spaces. (If the staff is enchanted, this will increase to %i spaces.)",
                                 staffBlinkDistance(enchant),
-                                staffBlinkDistance(enchant + FP_FACTOR));
+                                staffBlinkDistance(enchant + FP_FACTOR*mode.enchantValue));
                         break;
                     case STAFF_ENTRANCEMENT:
                         sprintf(buf2, "This staff will compel its target to mirror your movements for %i turns. (If the staff is enchanted, this will increase to %i turns.)",
                                 staffEntrancementDuration(enchant),
-                                staffEntrancementDuration(enchant + FP_FACTOR));
+                                staffEntrancementDuration(enchant + FP_FACTOR*mode.enchantValue));
                         break;
                     case STAFF_HEALING:
                         if (enchant / FP_FACTOR < 10) {
                             sprintf(buf2, "This staff will heal its target by %i%% of its maximum health. (If the staff is enchanted, this will increase to %i%%.)",
                                     theItem->enchant1 * 10,
-                                    (theItem->enchant1 + 1) * 10);
+                                    (theItem->enchant1 + mode.enchantValue) * 10);
                         } else {
                             strcpy(buf2, "This staff will completely heal its target.");
                         }
@@ -2410,7 +2434,7 @@ void itemDetails(char *buf, item *theItem) {
                     case STAFF_HASTE:
                         sprintf(buf2, "This staff will cause its target to move twice as fast for %i turns. (If the staff is enchanted, this will increase to %i turns.)",
                                 staffHasteDuration(enchant),
-                                staffHasteDuration(enchant + FP_FACTOR));
+                                staffHasteDuration(enchant + FP_FACTOR*mode.enchantValue));
                         break;
                     case STAFF_OBSTRUCTION:
                         strcpy(buf2, "");
@@ -2418,17 +2442,17 @@ void itemDetails(char *buf, item *theItem) {
                     case STAFF_DISCORD:
                         sprintf(buf2, "This staff will cause discord for %i turns. (If the staff is enchanted, this will increase to %i turns.)",
                                 staffDiscordDuration(enchant),
-                                staffDiscordDuration(enchant + FP_FACTOR));
+                                staffDiscordDuration(enchant + FP_FACTOR*mode.enchantValue));
                         break;
                     case STAFF_CONJURATION:
                         sprintf(buf2, "%i phantom blades will be called into service. (If the staff is enchanted, this will increase to %i blades.)",
                                 staffBladeCount(enchant),
-                                staffBladeCount(enchant + FP_FACTOR));
+                                staffBladeCount(enchant + FP_FACTOR*mode.enchantValue));
                         break;
                     case STAFF_PROTECTION:
                         sprintf(buf2, "This staff will shield a creature for up to 20 turns against up to %i damage. (If the staff is enchanted, this will increase to %i damage.)",
                                 staffProtection(enchant) / 10,
-                                staffProtection(enchant + FP_FACTOR) / 10);
+                                staffProtection(enchant + FP_FACTOR*mode.enchantValue) / 10);
                         break;
                     default:
                         strcpy(buf2, "No one knows what this staff does.");
@@ -2449,7 +2473,7 @@ void itemDetails(char *buf, item *theItem) {
                             theItem->charges,
                             (theItem->charges == 1 ? "" : "s"),
                             (theItem->charges == 1 ? "s" : ""),
-                            wandTable[theItem->kind].range.lowerBound,
+                            wandTable[theItem->kind].range.lowerBound*mode.enchantValue,
                             (wandTable[theItem->kind].range.lowerBound == 1 ? "" : "s"));
                 } else {
                     sprintf(buf2, "No charges remain.  Enchanting this wand will add %i charge%s.",
@@ -2470,7 +2494,7 @@ void itemDetails(char *buf, item *theItem) {
                     sprintf(buf2, " Wands of this type can be found with %i to %i charges. Enchanting this wand will add %i charge%s.",
                             wandTable[theItem->kind].range.lowerBound,
                             wandTable[theItem->kind].range.upperBound,
-                            wandTable[theItem->kind].range.lowerBound,
+                            wandTable[theItem->kind].range.lowerBound*mode.enchantValue,
                             (wandTable[theItem->kind].range.lowerBound == 1 ? "" : "s"));
                 }
             }
@@ -2485,11 +2509,11 @@ void itemDetails(char *buf, item *theItem) {
                             if (theItem->enchant1 > 0) {
                                 sprintf(buf2, "\n\nThis ring provides magical sight with a radius of %i. (If the ring is enchanted, this will increase to %i.)",
                                         theItem->enchant1 + 1,
-                                        theItem->enchant1 + 2);
+                                        theItem->enchant1 + mode.enchantValue);
                             } else {
                                 sprintf(buf2, "\n\nThis ring magically blinds you to a radius of %i. (If the ring is enchanted, this will decrease to %i.)",
                                         (theItem->enchant1 * -1) + 1,
-                                        (theItem->enchant1 * -1));
+                                        (theItem->enchant1 * -1) - (mode.enchantValue-1));
                             }
                             strcat(buf, buf2);
                             break;
@@ -2497,7 +2521,7 @@ void itemDetails(char *buf, item *theItem) {
                             sprintf(buf2, "\n\nWith this ring equipped, you will regenerate all of your health in %li turns (instead of %li). (If the ring is enchanted, this will decrease to %li turns.)",
                                     (long) (turnsForFullRegenInThousandths(enchant) / 1000),
                                     (long) TURNS_FOR_FULL_REGEN,
-                                    (long) (turnsForFullRegenInThousandths(enchant + FP_FACTOR) / 1000));
+                                    (long) (turnsForFullRegenInThousandths(enchant + FP_FACTOR*mode.enchantValue) / 1000));
                             strcat(buf, buf2);
                             break;
                         case RING_TRANSFERENCE:
@@ -2505,13 +2529,13 @@ void itemDetails(char *buf, item *theItem) {
                                     (theItem->enchant1 >= 0 ? "heal" : "harm"),
                                     abs(theItem->enchant1) * 5,
                                     (theItem->enchant1 >= 0 ? "increase" : "decrease"),
-                                    abs(theItem->enchant1 + 1) * 5);
+                                    abs(theItem->enchant1 + mode.enchantValue) * 5);
                             strcat(buf, buf2);
                             break;
                         case RING_WISDOM:
                             sprintf(buf2, "\n\nWhen worn, your staffs will recharge at %i%% of their normal rate. (If the ring is enchanted, the rate will increase to %i%% of the normal rate.)",
                                     (int) (100 * ringWisdomMultiplier(enchant) / FP_FACTOR),
-                                    (int) (100 * ringWisdomMultiplier(enchant + FP_FACTOR) / FP_FACTOR));
+                                    (int) (100 * ringWisdomMultiplier(enchant + FP_FACTOR*mode.enchantValue) / FP_FACTOR));
                             strcat(buf, buf2);
                             break;
                         case RING_REAPING:
@@ -2519,7 +2543,7 @@ void itemDetails(char *buf, item *theItem) {
                                     (theItem->enchant1 >= 0 ? "recharge" : "drain"),
                                     abs(theItem->enchant1),
                                     (theItem->enchant1 >= 0 ? "increase" : "decrease"),
-                                    abs(theItem->enchant1 + 1));
+                                    abs(theItem->enchant1 + mode.enchantValue));
                             strcat(buf, buf2);
                             break;
                         default:
@@ -2562,81 +2586,81 @@ void itemDetails(char *buf, item *theItem) {
                     sprintf(buf2, "\n\nWhen used, the charm will heal %i%% of your health and recharge in %i turns. (If the charm is enchanted, it will heal %i%% of your health and recharge in %i turns.)",
                             charmHealing(enchant),
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmHealing(enchant + FP_FACTOR),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmHealing(enchant + FP_FACTOR*mode.enchantValue),
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_PROTECTION:
                     sprintf(buf2, "\n\nWhen used, the charm will shield you for up to 20 turns for up to %i%% of your total health and recharge in %i turns. (If the charm is enchanted, it will shield up to %i%% of your total health and recharge in %i turns.)",
                             100 * charmProtection(enchant) / 10 / player.info.maxHP,
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            100 * charmProtection(enchant + FP_FACTOR) / 10 / player.info.maxHP,
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            100 * charmProtection(enchant + FP_FACTOR*mode.enchantValue) / 10 / player.info.maxHP,
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_HASTE:
                     sprintf(buf2, "\n\nWhen used, the charm will haste you for %i turns and recharge in %i turns. (If the charm is enchanted, the haste will last %i turns and it will recharge in %i turns.)",
                             charmEffectDuration(theItem->kind, theItem->enchant1),
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmEffectDuration(theItem->kind, theItem->enchant1 + 1),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmEffectDuration(theItem->kind, theItem->enchant1 + mode.enchantValue),
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_FIRE_IMMUNITY:
                     sprintf(buf2, "\n\nWhen used, the charm will grant you immunity to fire for %i turns and recharge in %i turns. (If the charm is enchanted, the immunity will last %i turns and it will recharge in %i turns.)",
                             charmEffectDuration(theItem->kind, theItem->enchant1),
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmEffectDuration(theItem->kind, theItem->enchant1 + 1),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmEffectDuration(theItem->kind, theItem->enchant1 + mode.enchantValue),
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_INVISIBILITY:
                     sprintf(buf2, "\n\nWhen used, the charm will turn you invisible for %i turns and recharge in %i turns. While invisible, monsters more than two spaces away cannot track you. (If the charm is enchanted, the invisibility will last %i turns and it will recharge in %i turns.)",
                             charmEffectDuration(theItem->kind, theItem->enchant1),
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmEffectDuration(theItem->kind, theItem->enchant1 + 1),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmEffectDuration(theItem->kind, theItem->enchant1 + mode.enchantValue),
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_TELEPATHY:
                     sprintf(buf2, "\n\nWhen used, the charm will grant you telepathy for %i turns and recharge in %i turns. (If the charm is enchanted, the telepathy will last %i turns and it will recharge in %i turns.)",
                             charmEffectDuration(theItem->kind, theItem->enchant1),
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmEffectDuration(theItem->kind, theItem->enchant1 + 1),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmEffectDuration(theItem->kind, theItem->enchant1 + mode.enchantValue),
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_LEVITATION:
                     sprintf(buf2, "\n\nWhen used, the charm will lift you off the ground for %i turns and recharge in %i turns. (If the charm is enchanted, the levitation will last %i turns and it will recharge in %i turns.)",
                             charmEffectDuration(theItem->kind, theItem->enchant1),
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmEffectDuration(theItem->kind, theItem->enchant1 + 1),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmEffectDuration(theItem->kind, theItem->enchant1 + mode.enchantValue),
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_SHATTERING:
                     sprintf(buf2, "\n\nWhen used, the charm will dissolve the nearby walls up to %i spaces away, and recharge in %i turns. (If the charm is enchanted, it will reach up to %i spaces and recharge in %i turns.)",
                             charmShattering(enchant),
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmShattering(enchant + FP_FACTOR),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmShattering(enchant + FP_FACTOR*mode.enchantValue),
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_GUARDIAN:
                     sprintf(buf2, "\n\nWhen used, a guardian will materialize for %i turns, and the charm will recharge in %i turns. (If the charm is enchanted, the guardian will last for %i turns and the charm will recharge in %i turns.)",
                             charmGuardianLifespan(enchant),
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmGuardianLifespan(enchant + FP_FACTOR),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmGuardianLifespan(enchant + FP_FACTOR*mode.enchantValue),
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_TELEPORTATION:
                     sprintf(buf2, "\n\nWhen used, the charm will teleport you elsewhere in the dungeon and recharge in %i turns. (If the charm is enchanted, it will recharge in %i turns.)",
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_RECHARGING:
                     sprintf(buf2, "\n\nWhen used, the charm will recharge your staffs (though not your wands or charms), after which it will recharge in %i turns. (If the charm is enchanted, it will recharge in %i turns.)",
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 case CHARM_NEGATION:
                     sprintf(buf2, "\n\nWhen used, the charm will emit a wave of anti-magic up to %i spaces away, negating all magical effects on you and on creatures and dropped items in your field of view. It will recharge in %i turns. (If the charm is enchanted, it will reach up to %i spaces and recharge in %i turns.)",
                             charmNegationRadius(enchant),
                             charmRechargeDelay(theItem->kind, theItem->enchant1),
-                            charmNegationRadius(enchant + FP_FACTOR),
-                            charmRechargeDelay(theItem->kind, theItem->enchant1 + 1));
+                            charmNegationRadius(enchant + FP_FACTOR*mode.enchantValue),
+                            charmRechargeDelay(theItem->kind, theItem->enchant1 + mode.enchantValue));
                     break;
                 default:
                     break;
@@ -5390,7 +5414,7 @@ pos pullMouseClickDuringPlayback(void) {
     nextBrogueEvent(&theEvent, false, false, false);
     return (pos){
         .x = windowToMapX(theEvent.param1),
-        .y = windowToMapX(theEvent.param2)
+        .y = windowToMapY(theEvent.param2)
     };
 }
 
@@ -6745,8 +6769,9 @@ short lotteryDraw(short *frequencies, short itemCount) {
 short chooseVorpalEnemy() {
     short i, frequencies[MONSTER_CLASS_COUNT];
     for (i = 0; i < MONSTER_CLASS_COUNT; i++) {
-        if (monsterClassCatalog[i].maxDepth <= 0
-            || rogue.depthLevel <= monsterClassCatalog[i].maxDepth) {
+        int maxDepth = ADJUST_DEPTH(monsterClassCatalog[i].originalMaxDepth);
+        if (maxDepth <= 0
+            || rogue.depthLevel <= maxDepth) {
 
             frequencies[i] = monsterClassCatalog[i].frequency;
         } else {
@@ -6894,18 +6919,18 @@ void readScroll(item *theItem) {
             confirmMessages();
             switch (theItem->category) {
                 case WEAPON:
-                    theItem->strengthRequired = max(0, theItem->strengthRequired - 1);
-                    theItem->enchant1++;
+                    theItem->strengthRequired = max(0, theItem->strengthRequired - mode.enchantValue);
+                    theItem->enchant1 += mode.enchantValue;
                     if (theItem->quiverNumber) {
                         theItem->quiverNumber = rand_range(1, 60000);
                     }
                     break;
                 case ARMOR:
-                    theItem->strengthRequired = max(0, theItem->strengthRequired - 1);
-                    theItem->enchant1++;
+                    theItem->strengthRequired = max(0, theItem->strengthRequired - mode.enchantValue);
+                    theItem->enchant1 += mode.enchantValue;
                     break;
                 case RING:
-                    theItem->enchant1++;
+                    theItem->enchant1 += mode.enchantValue;
                     updateRingBonuses();
                     if (theItem->kind == RING_CLAIRVOYANCE) {
                         updateClairvoyance();
@@ -6913,15 +6938,15 @@ void readScroll(item *theItem) {
                     }
                     break;
                 case STAFF:
-                    theItem->enchant1++;
-                    theItem->charges++;
+                    theItem->enchant1 += mode.enchantValue;
+                    theItem->charges += mode.enchantValue;
                     theItem->enchant2 = 500 / theItem->enchant1;
                     break;
                 case WAND:
-                    theItem->charges += wandTable[theItem->kind].range.lowerBound;
+                    theItem->charges += wandTable[theItem->kind].range.lowerBound * mode.enchantValue;
                     break;
                 case CHARM:
-                    theItem->enchant1++;
+                    theItem->enchant1 += mode.enchantValue;
                     theItem->charges = min(0, theItem->charges); // Enchanting instantly recharges charms.
                                                                  //                    theItem->charges = theItem->charges
                                                                  //                    * charmRechargeDelay(theItem->kind, theItem->enchant1)
@@ -6931,7 +6956,7 @@ void readScroll(item *theItem) {
                 default:
                     break;
             }
-            theItem->timesEnchanted++;
+            theItem->timesEnchanted += mode.enchantValue;
             if ((theItem->category & (WEAPON | ARMOR | STAFF | RING | CHARM))
                 && theItem->enchant1 >= 16) {
 

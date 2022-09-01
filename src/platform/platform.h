@@ -113,4 +113,4 @@ extern char dataDirectory[];
 
 // defined in brogue
 extern playerCharacter rogue;
-
+extern gameMode mode;

@@ -1,6 +1,6 @@
 *.o
 bin/*.brogue*
-bin/BrogueHighScores.txt
+bin/BrogueHighScores*.txt
 bin/brogue*
 bin/*.png
 

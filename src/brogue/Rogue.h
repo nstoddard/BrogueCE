@@ -166,16 +166,26 @@ typedef struct pos {
 
 #define VISIBILITY_THRESHOLD    50          // how bright cumulative light has to be before the cell is marked visible
 
-#define AMULET_LEVEL            26          // how deep before the amulet appears
-#define DEEPEST_LEVEL           40          // how deep the universe goes
+#define ORIGINAL_AMULET_LEVEL            26          // how deep before the amulet appears
+#define ORIGINAL_DEEPEST_LEVEL           40          // how deep the universe goes
+
+#define AMULET_LEVEL (mode.amuletLevel)
+#define DEEPEST_LEVEL (mode.deepestLevel)
+// Given a depth in [1, 40], converts it to [1, mode.deepestLevel]
+// Also useful for some values outside the range [1, 40]
+#define ADJUST_DEPTH(depth) ((((depth)-1) * mode.deepestLevel / 40) + 1)
+// Given a depth in [1, mode.deepestLevel], converts it to [1, 40]
+// This isn't quite the inverse of ADJUST_DEPTH; this version seems to work better for
+// life/strength/enchanting frequencies.
+#define ADJUST_DEPTH_INV(x) (((x) * 40 / mode.deepestLevel))
 
 #define MACHINES_FACTOR         FP_FACTOR   // use this to adjust machine frequency
 
 #define MACHINES_BUFFER_LENGTH  200
 
-#define WEAPON_KILLS_TO_AUTO_ID 20
-#define ARMOR_DELAY_TO_AUTO_ID  1000
-#define RING_DELAY_TO_AUTO_ID   1500
+#define WEAPON_KILLS_TO_AUTO_ID (ADJUST_DEPTH(20))
+#define ARMOR_DELAY_TO_AUTO_ID  (ADJUST_DEPTH(1000))
+#define RING_DELAY_TO_AUTO_ID   (ADJUST_DEPTH(1500))
 
 #define FALL_DAMAGE_MIN         8
 #define FALL_DAMAGE_MAX         10
@@ -2153,8 +2163,8 @@ typedef struct hordeType {
     randomRange memberCount[5];
 
     // spawning information
-    short minLevel;
-    short maxLevel;
+    short originalMinLevel;
+    short originalMaxLevel;
     short frequency;
     enum tileType spawnsIn;
     short machine;
@@ -2165,7 +2175,7 @@ typedef struct hordeType {
 typedef struct monsterClass {
     char name[30];
     short frequency;
-    short maxDepth;
+    short originalMaxDepth;
     enum monsterTypes memberList[15];
 } monsterClass;
 
@@ -2264,12 +2274,21 @@ enum featTypes {
     FEAT_COUNT,
 };
 
+typedef struct {
+    short amuletLevel;
+    short deepestLevel;
+    short enchantValue;
+    boolean includeEmptyLevel;
+    boolean startWithDetectMagic;
+    char highScoresFilename[50];
+} gameMode;
+
 // these are basically global variables pertaining to the game state and player's unique variables:
 typedef struct playerCharacter {
     boolean wizard;                     // in wizard mode
 
     short depthLevel;                   // which dungeon level are we on
-    short deepestLevel;
+    short deepestLevel;                 // the deepest level the player has been to
     boolean disturbed;                  // player should stop auto-acting
     boolean gameInProgress;             // the game is in progress (the player has not died, won or quit yet)
     boolean gameHasEnded;               // stop everything and go to death screen
@@ -2485,7 +2504,7 @@ enum blueprintFlags {
 };
 
 typedef struct blueprint {
-    short depthRange[2];                // machine must be built between these dungeon depths
+    short originalDepthRange[2];                // machine must be built between these dungeon depths
     short roomSize[2];                  // machine must be generated in a room of this size
     short frequency;                    // frequency (number of tickets this blueprint enters in the blueprint selection raffle)
     short featureCount;                 // how many different types of features follow (max of 20)
@@ -2591,8 +2610,8 @@ typedef struct autoGenerator {
     // Parameters governing when and where it spawns:
     enum tileType requiredDungeonFoundationType;
     enum tileType requiredLiquidFoundationType;
-    short minDepth;
-    short maxDepth;
+    short originalMinDepth;
+    short originalMaxDepth;
     short frequency;
     short minNumberIntercept; // actually intercept * 100
     short minNumberSlope; // actually slope * 100

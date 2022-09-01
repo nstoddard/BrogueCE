@@ -1704,7 +1704,7 @@ void populateCreatureCostMap(short **costMap, creature *monst) {
     item *theItem;
     unsigned long tFlags, cFlags;
 
-    unexploredCellCost = 10 + (clamp(rogue.depthLevel, 5, 15) - 5) * 2;
+    unexploredCellCost = 10 + (clamp(ADJUST_DEPTH_INV(rogue.depthLevel), 5, 15) - 5) * 2;
 
     for (i=0; i<DCOLS; i++) {
         for (j=0; j<DROWS; j++) {

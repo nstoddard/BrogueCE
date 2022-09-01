@@ -183,8 +183,8 @@ void initializeRogue(uint64_t seed) {
 
     // reset enchant and gain strength frequencies
     rogue.lifePotionFrequency = 0;
-    rogue.strengthPotionFrequency = 40;
-    rogue.enchantScrollFrequency = 60;
+    rogue.strengthPotionFrequency = ADJUST_DEPTH_INV(40);
+    rogue.enchantScrollFrequency = ADJUST_DEPTH_INV(60);
 
     // all DF messages are eligible for display
     resetDFMessageEligibility();
@@ -468,6 +468,13 @@ void initializeRogue(uint64_t seed) {
 //          theItem = addItemToPack(theItem);
 //      }
     }
+
+    if (mode.startWithDetectMagic) {
+        theItem = generateItem(POTION, POTION_DETECT_MAGIC);
+        identify(theItem);
+        addItemToPack(theItem);
+    }
+
     clearMessageArchive();
     blackOutScreen();
     welcome();
@@ -603,7 +610,7 @@ void startLevel(short oldLevelNumber, short stairDirection) {
 
     //  Prepare the new level
     rogue.minersLightRadius = (DCOLS - 1) * FP_FACTOR;
-    for (i = 0; i < rogue.depthLevel; i++) {
+    for (i = 0; i < ADJUST_DEPTH_INV(rogue.depthLevel); i++) {
         rogue.minersLightRadius = rogue.minersLightRadius * 85 / 100;
     }
     rogue.minersLightRadius += FP_FACTOR * 225 / 100;
@@ -740,7 +747,9 @@ void startLevel(short oldLevelNumber, short stairDirection) {
         if (rogue.depthLevel == AMULET_LEVEL) {
             messageWithColor("An alien energy permeates the area. The Amulet of Yendor must be nearby!", &itemMessageColor, 0);
         } else if (rogue.depthLevel == DEEPEST_LEVEL) {
-            messageWithColor("An overwhelming sense of peace and tranquility settles upon you.", &lightBlue, 0);
+            if (mode.includeEmptyLevel) {
+                messageWithColor("An overwhelming sense of peace and tranquility settles upon you.", &lightBlue, 0);
+            }
         }
     }
 

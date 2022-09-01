@@ -432,8 +432,8 @@ boolean itemIsADuplicate(item *theItem, item **spawnedItems, short itemCount) {
 }
 
 boolean blueprintQualifies(short i, unsigned long requiredMachineFlags) {
-    if (blueprintCatalog[i].depthRange[0] > rogue.depthLevel
-        || blueprintCatalog[i].depthRange[1] < rogue.depthLevel
+    if (ADJUST_DEPTH(blueprintCatalog[i].originalDepthRange[0]) > rogue.depthLevel
+        || ADJUST_DEPTH(blueprintCatalog[i].originalDepthRange[1]) < rogue.depthLevel
                 // Must have the required flags:
         || (~(blueprintCatalog[i].flags) & requiredMachineFlags)
                 // May NOT have BP_ADOPT_ITEM unless that flag is required:
@@ -1718,11 +1718,11 @@ void addMachines() {
     // Add reward rooms, if any:
     machineCount = 0;
     while (rogue.depthLevel <= AMULET_LEVEL
-        && (rogue.rewardRoomsGenerated + machineCount) * 4 + 2 < rogue.depthLevel * MACHINES_FACTOR / FP_FACTOR) {
+        && (rogue.rewardRoomsGenerated + machineCount) * 4 + 2 < ADJUST_DEPTH_INV(rogue.depthLevel * MACHINES_FACTOR) / FP_FACTOR) {
         // try to build at least one every four levels on average
         machineCount++;
     }
-    randomMachineFactor = (rogue.depthLevel < 3 && (rogue.rewardRoomsGenerated + machineCount) == 0 ? 40 : 15);
+    randomMachineFactor = (ADJUST_DEPTH_INV(rogue.depthLevel) < 3 && (rogue.rewardRoomsGenerated + machineCount) == 0 ? 40 : 15);
     while (rand_percent(max(randomMachineFactor, 15 * MACHINES_FACTOR / FP_FACTOR)) && machineCount < 100) {
         randomMachineFactor = 15;
         machineCount++;
@@ -1753,7 +1753,7 @@ void runAutogenerators(boolean buildAreaMachines) {
         if (gen->machine > 0 == buildAreaMachines) {
 
             // Enforce depth constraints.
-            if (rogue.depthLevel < gen->minDepth || rogue.depthLevel > gen->maxDepth) {
+            if (rogue.depthLevel < ADJUST_DEPTH(gen->originalMinDepth) || rogue.depthLevel > ADJUST_DEPTH(gen->originalMaxDepth)) {
                 continue;
             }
 
@@ -2480,8 +2480,8 @@ void finishWalls(boolean includingDiagonals) {
 void liquidType(short *deep, short *shallow, short *shallowWidth) {
     short randMin, randMax, rand;
 
-    randMin = (rogue.depthLevel < 4 ? 1 : 0); // no lava before level 4
-    randMax = (rogue.depthLevel < 17 ? 2 : 3); // no brimstone before level 18
+    randMin = (ADJUST_DEPTH_INV(rogue.depthLevel) < 4 ? 1 : 0); // no lava before level 4
+    randMax = (ADJUST_DEPTH_INV(rogue.depthLevel) < 17 ? 2 : 3); // no brimstone before level 18
     rand = rand_range(randMin, randMax);
     if (rogue.depthLevel == DEEPEST_LEVEL) {
         rand = 1;

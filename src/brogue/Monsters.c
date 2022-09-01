@@ -68,13 +68,13 @@ creature *generateMonster(short monsterID, boolean itemPossible, boolean mutatio
     if (mutationPossible
         && !(monst->info.flags & MONST_NEVER_MUTATED)
         && !(monst->info.abilityFlags & MA_NEVER_MUTATED)
-        && rogue.depthLevel > 10) {
+        && ADJUST_DEPTH_INV(rogue.depthLevel) > 10) {
 
 
         if (rogue.depthLevel <= AMULET_LEVEL) {
-            mutationChance = clamp(rogue.depthLevel - 10, 1, 10);
+            mutationChance = clamp(ADJUST_DEPTH_INV(rogue.depthLevel) - 10, 1, 10);
         } else {
-            mutationChance = POW_DEEP_MUTATION[min(rogue.depthLevel - AMULET_LEVEL, 12)];
+            mutationChance = POW_DEEP_MUTATION[min(ADJUST_DEPTH_INV(rogue.depthLevel) - ORIGINAL_AMULET_LEVEL, 12)];
             mutationChance = min(mutationChance, 75);
         }
 
@@ -477,7 +477,7 @@ short pickHordeType(short depth, enum monsterTypes summonerType, unsigned long f
     for (i=0; i<NUMBER_HORDES; i++) {
         if (!(hordeCatalog[i].flags & forbiddenFlags)
             && !(~(hordeCatalog[i].flags) & requiredFlags)
-            && ((!summonerType && hordeCatalog[i].minLevel <= depth && hordeCatalog[i].maxLevel >= depth)
+            && ((!summonerType && ADJUST_DEPTH(hordeCatalog[i].originalMinLevel) <= depth && ADJUST_DEPTH(hordeCatalog[i].originalMaxLevel) >= depth)
                 || (summonerType && (hordeCatalog[i].flags & HORDE_IS_SUMMONED) && hordeCatalog[i].leaderType == summonerType))) {
                 possCount += hordeCatalog[i].frequency;
         }
@@ -492,7 +492,7 @@ short pickHordeType(short depth, enum monsterTypes summonerType, unsigned long f
     for (i=0; i<NUMBER_HORDES; i++) {
         if (!(hordeCatalog[i].flags & forbiddenFlags)
             && !(~(hordeCatalog[i].flags) & requiredFlags)
-            && ((!summonerType && hordeCatalog[i].minLevel <= depth && hordeCatalog[i].maxLevel >= depth)
+            && ((!summonerType && ADJUST_DEPTH(hordeCatalog[i].originalMinLevel) <= depth && ADJUST_DEPTH(hordeCatalog[i].originalMaxLevel) >= depth)
                 || (summonerType && (hordeCatalog[i].flags & HORDE_IS_SUMMONED) && hordeCatalog[i].leaderType == summonerType))) {
                 if (index <= hordeCatalog[i].frequency) {
                     return i;
@@ -753,7 +753,7 @@ creature *spawnHorde(short hordeID, short x, short y, unsigned long forbiddenFla
     boolean tryAgain;
 
     if (rogue.depthLevel > 1 && rand_percent(10)) {
-        depth = rogue.depthLevel + rand_range(1, min(5, rogue.depthLevel / 2));
+        depth = rogue.depthLevel + rand_range(1, min(ADJUST_DEPTH(5), rogue.depthLevel / 2));
         if (depth > AMULET_LEVEL) {
             depth = max(rogue.depthLevel, AMULET_LEVEL);
         }
@@ -1043,7 +1043,7 @@ void populateMonsters() {
         return;
     }
 
-    short i, numberOfMonsters = min(20, 6 + 3 * max(0, rogue.depthLevel - AMULET_LEVEL)); // almost always 6.
+    short i, numberOfMonsters = min(20, 6 + 3 * max(0, ADJUST_DEPTH_INV(rogue.depthLevel - AMULET_LEVEL))); // almost always 6.
 
     while (rand_percent(60)) {
         numberOfMonsters++;
